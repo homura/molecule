@@ -8,26 +8,6 @@ pub mod types {
     include!(concat!(env!("OUT_DIR"), "/", "types", ".rs"));
 }
 
-#[cfg(test)]
-mod test_vectors {
-    mod default {
-        use crate::types::*;
-        use molecule::prelude::*;
-        molecule_tests_utils_rust::load_tests!(
-            "../../test/schemas/types.mol",
-            "../../test/vectors/default.yaml",
-        );
-    }
-    mod simple {
-        use crate::types::*;
-        use molecule::prelude::*;
-        molecule_tests_utils_rust::load_tests!(
-            "../../test/schemas/types.mol",
-            "../../test/vectors/simple.yaml"
-        );
-    }
-}
-
 #[macro_export]
 macro_rules! testset {
     (array, $callback:ident) => {
@@ -126,6 +106,7 @@ macro_rules! testset {
     (union, $callback:ident) => {
         use $crate::types::*;
         $callback!(UnionA);
+        $callback!(UnionB);
     };
     (all, $callback:ident) => {
         use $crate::types::*;
@@ -138,4 +119,24 @@ macro_rules! testset {
         testset!(union, $callback);
         $callback!(AllInOne);
     };
+}
+
+#[cfg(test)]
+mod test_vectors {
+    mod default {
+        use crate::types::*;
+        use molecule::prelude::*;
+        molecule_tests_utils_rust::load_tests!(
+            "../../test/schemas/types.mol",
+            "../../test/vectors/default.yaml",
+        );
+    }
+    mod simple {
+        use crate::types::*;
+        use molecule::prelude::*;
+        molecule_tests_utils_rust::load_tests!(
+            "../../test/schemas/types.mol",
+            "../../test/vectors/simple.yaml"
+        );
+    }
 }

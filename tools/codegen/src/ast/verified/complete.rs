@@ -31,7 +31,10 @@ impl CompleteRawDecl for raw::UnionDecl {
         }
         self.items()
             .iter()
-            .map(|raw_item| deps.get(raw_item.typ()).map(super::ItemDecl::new))
+            .map(|raw_item| {
+                deps.get(raw_item.typ())
+                    .map(|typ| super::UnionItemDecl::new(typ, raw_item.id()))
+            })
             .collect::<Option<Vec<_>>>()
             .map(|items| {
                 let name = self.name().to_owned();
@@ -213,7 +216,11 @@ impl super::Ast {
             let result = decls_result.get(decl.name()).unwrap();
             decls.push(Rc::clone(result));
         }
+
+        let syntax_version = raw.syntax_version().unwrap().to_owned();
+
         Self {
+            syntax_version,
             namespace,
             imports,
             decls,

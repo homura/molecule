@@ -9,6 +9,7 @@ impl ToIntermediate for ast::Ast {
     type Ir = super::Ir;
     fn to_ir(&self) -> Self::Ir {
         Self::Ir {
+            syntax_version: self.syntax_version().to_owned(),
             namespace: self.namespace().to_owned(),
             imports: self.imports().iter().map(ToIntermediate::to_ir).collect(),
             decls: self.decls().iter().map(|decl| decl.to_ir()).collect(),
@@ -126,6 +127,15 @@ impl ToIntermediate for ast::ItemDecl {
     fn to_ir(&self) -> Self::Ir {
         Self::Ir {
             typ: self.typ().name().to_owned(),
+        }
+    }
+}
+impl ToIntermediate for ast::UnionItemDecl {
+    type Ir = super::UnionItemDecl;
+    fn to_ir(&self) -> Self::Ir {
+        Self::Ir {
+            typ: self.typ().name().to_owned(),
+            id: self.id().to_owned(),
         }
     }
 }

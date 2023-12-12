@@ -29,9 +29,13 @@ impl RecoverFromIr for ir::Union {
         if self.items().is_empty() {
             panic!("the union ({}) is empty", self.name());
         }
+
         self.items()
             .iter()
-            .map(|ir_item| deps.get(ir_item.typ()).map(super::ItemDecl::new))
+            .map(|ir_item| {
+                deps.get(ir_item.typ())
+                    .map(|item| super::UnionItemDecl::new(item, ir_item.id()))
+            })
             .collect::<Option<Vec<_>>>()
             .map(|items| {
                 let name = self.name().to_owned();
@@ -219,7 +223,10 @@ impl super::Ast {
             let result = decls_result.get(decl.name()).unwrap();
             decls.push(Rc::clone(result));
         }
+
+        let syntax_version = ir.syntax_version().to_owned();
         Self {
+            syntax_version,
             namespace,
             imports,
             decls,

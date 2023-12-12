@@ -12,11 +12,14 @@ mod recover;
 pub use default_content::DefaultContent;
 pub use has_name::HasName;
 
+use crate::ast::SyntaxVersion;
+
 type Deps<'a> = HashMap<&'a str, Rc<super::TopDecl>>;
 
 #[derive(Debug, Property)]
 #[property(get(public))]
 pub struct Ast {
+    syntax_version: SyntaxVersion,
     namespace: String,
     imports: Vec<ImportStmt>,
     decls: Vec<Rc<TopDecl>>,
@@ -61,7 +64,7 @@ pub struct Option_ {
 #[property(get(public))]
 pub struct Union {
     name: String,
-    items: Vec<ItemDecl>,
+    items: Vec<UnionItemDecl>,
     imported_depth: usize,
 }
 
@@ -113,6 +116,13 @@ pub struct Table {
 #[property(get(public))]
 pub struct ItemDecl {
     typ: Rc<TopDecl>,
+}
+
+#[derive(Debug, Property)]
+#[property(get(public))]
+pub struct UnionItemDecl {
+    typ: Rc<TopDecl>,
+    id: usize,
 }
 
 #[derive(Debug, Property)]
@@ -214,6 +224,15 @@ impl ItemDecl {
     fn new(top_decl: &Rc<TopDecl>) -> Self {
         Self {
             typ: Rc::clone(top_decl),
+        }
+    }
+}
+
+impl UnionItemDecl {
+    fn new(top_decl: &Rc<TopDecl>, customize_id: usize) -> Self {
+        Self {
+            typ: Rc::clone(top_decl),
+            id: customize_id,
         }
     }
 }

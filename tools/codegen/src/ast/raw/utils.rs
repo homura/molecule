@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::{ffi, fs, io::Read as _, path::Path, str::FromStr};
 
 use pest::{error::Error as PestError, iterators::Pairs, Parser as _};
@@ -5,6 +6,8 @@ use same_file::is_same_file;
 
 use crate::{
     ast::raw as ast,
+    ast::raw::CustomUnionItemDecl,
+    ast::raw::SyntaxVersion,
     parser,
     utils::{self, PairsUtils as _},
 };
@@ -37,6 +40,51 @@ impl<'i> utils::PairsUtils for Pairs<'i, parser::Rule> {
             pair.next_should_be_none();
             ret.push(node);
         }
+        ret
+    }
+
+    fn next_custom_union_items(&mut self) -> Vec<CustomUnionItemDecl> {
+        let mut previous_id: Option<usize> = None;
+        let mut ret = Vec::new();
+
+        let mut custom_ids = HashSet::new();
+        for item in self {
+            match item.as_rule() {
+                parser::Rule::item_decl => {
+                    let mut pair = item.into_inner();
+                    let node = ast::CustomUnionItemDecl {
+                        typ: pair.next_string(),
+                        id: if let Some(pre_id) = previous_id {
+                            pre_id + 1
+                        } else {
+                            0
+                        },
+                    };
+                    pair.next_should_be_none();
+                    ret.push(node);
+                }
+                parser::Rule::custom_union_item_decl => {
+                    let mut pair = item.into_inner();
+                    let node = ast::CustomUnionItemDecl {
+                        typ: pair.next_string(),
+                        id: pair.next_usize(),
+                    };
+                    pair.next_should_be_none();
+                    ret.push(node);
+                }
+                _ => unreachable!(),
+            }
+
+            if !custom_ids.insert(ret.last().unwrap().id) {
+                panic!(
+                    "Custom Union Item ID {} is duplicated",
+                    ret.last().unwrap().id
+                );
+            }
+            previous_id = Some(ret.last().unwrap().id);
+        }
+        // union items should be sorted by custom ID
+        ret.sort_by_key(|item| item.id);
         ret
     }
 
@@ -100,7 +148,7 @@ impl<'i> utils::PairsUtils for Pairs<'i, parser::Rule> {
 }
 
 impl utils::ParserUtils for parser::Parser {
-    fn preprocess<P: AsRef<Path>>(path: &P) -> Result<ast::Ast, PestError<parser::Rule>> {
+    fn preprocess<P: AsRef<Path>>(path: &P) -> Result<ast::Ast, Box<PestError<parser::Rule>>> {
         let namespace = path
             .as_ref()
             .file_stem()
@@ -136,13 +184,13 @@ impl utils::ParserUtils for parser::Parser {
                 path_buf.push(stmt.name());
                 path_buf.set_extension("mol");
                 let path_new = path_buf.as_path();
-                if is_same_file(path, &path_new).unwrap() {
+                if is_same_file(path, path_new).unwrap() {
                     panic!("found cyclic dependencie");
                 }
 
                 if path_bufs
                     .iter()
-                    .any(|ref path_old| is_same_file(&path_old, &path_new).unwrap())
+                    .any(|ref path_old| is_same_file(path_old, path_new).unwrap())
                 {
                     continue;
                 } else {
@@ -164,10 +212,10 @@ impl parser::Parser {
         ast: &mut ast::Ast,
         path: &P,
         imported_depth: usize,
-    ) -> Result<(), PestError<parser::Rule>> {
+    ) -> Result<(), Box<PestError<parser::Rule>>> {
         let buffer = {
             let mut buffer = String::new();
-            let mut file_in = fs::OpenOptions::new().read(true).open(&path).unwrap();
+            let mut file_in = fs::OpenOptions::new().read(true).open(path).unwrap();
             file_in.read_to_string(&mut buffer).unwrap();
             buffer
         };
@@ -184,6 +232,22 @@ impl parser::Parser {
                 panic!("grammar should have only one EOI");
             }
             match pair.as_rule() {
+                parser::Rule::syntax_version_stmt => {
+                    let mut pair = pair.into_inner();
+                    let syntax_version = SyntaxVersion {
+                        version: pair.next_usize(),
+                    };
+                    pair.next_should_be_none();
+                    if ast.syntax_version.is_some() {
+                        // compare ast.syntax_version and syntax_version
+                        // panic if there is a conflict syntax_version
+                        if ast.syntax_version != Some(syntax_version) {
+                            panic!("all schema files' syntax version should be same");
+                        }
+                    } else {
+                        ast.syntax_version = Some(syntax_version);
+                    }
+                }
                 parser::Rule::import_stmt => {
                     let mut pair = pair.into_inner();
                     let node = pair.next_import(path, imported_depth);
@@ -204,7 +268,7 @@ impl parser::Parser {
                     let mut pair = pair.into_inner();
                     let node = ast::UnionDecl {
                         name: pair.next_string(),
-                        items: pair.next_items(),
+                        items: pair.next_custom_union_items(),
                         imported_depth,
                     };
                     pair.next_should_be_none();
@@ -265,6 +329,79 @@ impl parser::Parser {
         if !eoi {
             panic!("grammar should have only one EOI");
         }
+
+        if ast.syntax_version.is_none() {
+            ast.syntax_version = Some(SyntaxVersion::default());
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parser, utils, SyntaxVersion};
+    use std::io::Write;
+
+    #[test]
+    fn test_default_syntax_version_should_be_1_0() {
+        use utils::ParserUtils;
+        // get path of  file
+        let mut schema_file = tempfile::NamedTempFile::new().unwrap();
+        let _ = schema_file.write(b"array uint32 [byte; 4];").unwrap();
+        schema_file.flush().unwrap();
+
+        let file = schema_file.into_temp_path();
+
+        let ast = parser::Parser::preprocess(&file).unwrap();
+        assert_eq!(ast.syntax_version, Some(SyntaxVersion { version: 1 }));
+    }
+
+    #[test]
+    fn test_parse_syntax_version() {
+        use utils::ParserUtils;
+        // get path of  file
+        let mut schema_file = tempfile::NamedTempFile::new().unwrap();
+        let test_version = SyntaxVersion { version: 7 };
+        schema_file
+            .write_fmt(format_args!("syntax = {};", test_version.version))
+            .unwrap();
+        let _ = schema_file.write(b"array uint32 [byte; 4];").unwrap();
+        schema_file.flush().unwrap();
+
+        let file = schema_file.into_temp_path();
+
+        let ast = parser::Parser::preprocess(&file).unwrap();
+        assert_eq!(ast.syntax_version, Some(test_version));
+    }
+
+    #[test]
+    #[should_panic]
+    // if A `syntax = 1` schema file imports a `syntax = 2` schema file, it should panic
+    fn test_different_syntax_version_should_panic() {
+        use utils::ParserUtils;
+
+        let mut child_schema_file = tempfile::NamedTempFile::new().unwrap();
+        child_schema_file
+            .write_fmt(format_args!("syntax = 2;"))
+            .unwrap();
+        let _ = child_schema_file.write(b"array uint64 [byte; 8];").unwrap();
+        child_schema_file.flush().unwrap();
+
+        let child_file = child_schema_file.into_temp_path();
+        let child_file_path = child_file.to_str().unwrap();
+
+        let mut root_schema_file = tempfile::NamedTempFile::new().unwrap();
+        root_schema_file
+            .write_fmt(format_args!("syntax = 1;",))
+            .unwrap();
+        root_schema_file
+            .write_fmt(format_args!("import {:?}", child_file_path))
+            .unwrap();
+        let _ = root_schema_file.write(b"array uint32 [byte; 4];").unwrap();
+        root_schema_file.flush().unwrap();
+
+        let file = root_schema_file.into_temp_path();
+
+        parser::Parser::preprocess(&file).unwrap();
     }
 }

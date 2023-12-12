@@ -177,6 +177,21 @@ union UnionA {
     Table6Opt,
 }
 
+union UnionB {
+    byte : 2,
+    Word : 4,
+}
+
+union UnionC {
+    Word,
+    byte,
+}
+
+union UnionD {
+    Word : 2,
+    byte : 4,
+}
+
 table TableA {
     f1: Word2,
     f2: StructA,

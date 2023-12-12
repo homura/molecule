@@ -47,9 +47,9 @@ impl ImplReader for ast::Option_ {
 
 impl ImplReader for ast::Union {
     fn impl_reader_internal(&self) -> m4::TokenStream {
-        let verify_inners = self.items().iter().enumerate().map(|(index, inner)| {
-            let item_id = usize_lit(index);
-            let inner = reader_name(inner.typ().name());
+        let verify_inners = self.items().iter().map(|item| {
+            let item_id = usize_lit(item.id());
+            let inner = reader_name(item.typ().name());
             quote!(
                 #item_id => #inner::verify(inner_slice, compatible),
             )
@@ -217,9 +217,6 @@ impl ImplReader for ast::Table {
                     let total_size = molecule::unpack_number(slice) as usize;
                     if slice_len != total_size {
                         return ve!(Self, TotalSizeNotMatch, total_size, slice_len);
-                    }
-                    if slice_len == molecule::NUMBER_SIZE && Self::FIELD_COUNT == 0 {
-                        return Ok(());
                     }
                     if slice_len < molecule::NUMBER_SIZE * 2 {
                         return ve!(Self, HeaderIsBroken, molecule::NUMBER_SIZE * 2, slice_len);
